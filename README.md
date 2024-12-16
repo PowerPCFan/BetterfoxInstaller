@@ -1,0 +1,1 @@
+# BetterfoxInstaller
