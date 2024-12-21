@@ -1,9 +1,11 @@
 # BetterfoxInstaller
 A quick and easy way to install https://github.com/yokoffing/Betterfox user.js mods for Firefox. 
 
-# How to run
-Go to the releases page: https://github.com/PowerPCFan/BetterfoxInstaller/releases
-There is a .ps1 and a .exe you can choose from. I'd recommend the EXE if you don't know how to run PowerShell scripts. 
+# Running the Script
+- **Run Method 1 (recommended):** Copy, paste, and run this quick command: `irm https://bit.ly/betterfoxinstaller | iex`
+- **Run Method 2:** Go to the "Releases" page on this GitHub repo and manually download and run the PowerShell script. 
 
 # "This broke something, how do I fix it?!" 
-Please check out the page https://github.com/yokoffing/Betterfox/wiki/Common-Overrides from the developer. It gives you the lines to add to the user.js file to revert certain changes that Betterfox makes. 
+This is not a problem with my script, so please do not create an issue in this repo. All this does is apply the Betterfox user.js tweaks.  
+
+Consider checking out the page https://github.com/yokoffing/Betterfox/wiki/Common-Overrides from the developer of Betterfox. It explains how to revert certain changes.
