@@ -2,7 +2,7 @@
 A quick and easy way to install https://github.com/yokoffing/Betterfox user.js mods for Firefox. 
 
 # Running the Script
-- **Run Method 1 (recommended):** Copy, paste, and run this quick command: `irm https://bit.ly/betterfoxinstaller | iex`
+- **Run Method 1 (recommended):** Open PowerShell **as admin** and then copy, paste, and run this quick command: `irm https://bit.ly/betterfoxinstaller | iex`
 - **Run Method 2:** Go to the "Releases" page on this GitHub repo and manually download and run the PowerShell script. 
 
 # "This broke something, how do I fix it?!" 
