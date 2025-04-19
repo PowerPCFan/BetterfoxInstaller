@@ -1,127 +1,202 @@
-Clear-Host
+function Install-PSModule { # Approved Verb ("Places a resource in a location, and optionally initializes it")
+    param (
+        [string]$moduleName,        
+        [string]$requiredVersion    
+    )
 
-# Check if the script is running as an administrator
-if (-not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
-    # Relaunch the script as administrator
-    $arguments = $myinvocation.MyCommand.Definition
-    Start-Process powershell -ArgumentList "-NoProfile -ExecutionPolicy Unrestricted -File $arguments" -Verb RunAs
-    Exit
+    $module = Get-Module -ListAvailable -Name $moduleName -All | Where-Object { $_.Version -eq $requiredVersion }
+    if (-not $module) {
+        if (-not (Get-Module PSResourceGet -listavailable -All)) {
+            Install-Module -Name $moduleName -RequiredVersion $requiredVersion -Force -Repository PSGallery -Confirm:$false
+        } else {
+            Install-PSResource -Name $moduleName -Version $requiredVersion -TrustRepository -Reinstall -Repository PSGallery -Quiet -AcceptLicense
+        }
+    }
 }
 
-# AnyBox
-Install-Module -Name 'AnyBox' -RequiredVersion 0.5.1
-Import-Module AnyBox
-
-# Define the path to the Firefox Profiles directory
-$profilesPath = "$env:APPDATA\Mozilla\Firefox\Profiles"
-
-# Define the URL to download the user.js file
-$fileUrl = "https://raw.githubusercontent.com/yokoffing/Betterfox/refs/heads/main/user.js"
-
-function installInAllProfiles {
-	# Check if the Profiles directory exists
-	if (Test-Path $profilesPath) {
-		# Get all directories in the Profiles folder
-		$directories = Get-ChildItem -Path $profilesPath -Directory
-			foreach ($directory in $directories) {
-				# Define the full path for the user.js file
-				$filePath = Join-Path -Path $directory.FullName -ChildPath "user.js"
-
-				# Download the user.js file and save it in the directory
-				Invoke-WebRequest -Uri $fileUrl -OutFile $filePath
-			}
-		Clear-Host
-		Write-Host "Successfully downloaded and installed Betterfox user.js to all Firefox profiles in $profilesPath" -ForegroundColor Green
-		Write-Host "Press any key to relaunch Firefox to apply the tweaks. Make sure all work is saved!"
-		Read-Host
-		TASKKILL /F /IM firefox.exe | Out-Null
-		Start-Sleep -Seconds 1 | Out-Null
-		Start-Process "$env:SystemDrive\Program Files\Mozilla Firefox\firefox.exe" | Out-Null
-		Write-Host "Firefox has relaunched and the Betterfox tweaks are applied successfully. Press any key to exit."
-		Read-Host
-		exit
-	} else {
-		Clear-Host
-		Write-Host "Firefox is not installed, or is in an install location that is unsupported."
-		Write-Host "Press any key to exit."
-		Read-Host
-		exit
-	}
+function Test-AdminPrivileges { # Approved Verb ("Verifies the operation or consistency of a resource")
+    # Check if the script is running as an administrator
+    if (-not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+        Clear-Host
+        Write-Host -ForegroundColor Red "============================================================================="
+        Write-Host -ForegroundColor Red "Failure: Current permissions inadequate: Script not running as administrator."
+        Write-Host -ForegroundColor Red "============================================================================="
+        Get-UserChoice -readHostMessage "[R] Attempt to relaunch as administrator [E] Exit" -choicePrompt "Please select an action:" -keys "R", "E" -choiceActions @{
+            choiceIsR = { 
+                Start-Process `
+                -Verb RunAs `
+                -FilePath "powershell.exe" `
+                -ArgumentList "-Command", "Invoke-RestMethod -Uri 'https://bit.ly/betterfoxinstaller' | Invoke-Expression"
+                
+                Stop-Transcript
+                exit
+            }
+            choiceIsE = { exit }
+        }
+    }
 }
 
-function installInDefaultProfile {
-	Invoke-WebRequest -Uri "https://raw.githubusercontent.com/PowerPCFan/BetterfoxInstaller/refs/heads/main/firefoxDefaultFinder.ps1" -OutFile "$env:Temp\firefoxDefaultFinder.ps1"
-	Set-Location "$env:Temp"
-    # Run the default profile detector script and capture the output
-    $nameOfDefaultProfileFolder = (& ".\firefoxDefaultFinder.ps1").Trim()
+function Install-BetterfoxAllProfiles {
+    if (Test-Path $firefoxProfilesPath) {
+        $directories = Get-ChildItem -Path $firefoxProfilesPath -Directory
+        foreach ($directory in $directories) {
+            $dirName = $directory.FullName
+            Invoke-WebRequest -Uri $betterfoxDownloadLink -OutFile "$dirName\user.js"
+        }
+        Write-Host "Successfully downloaded and installed Betterfox user.js to all Firefox profiles in $firefoxProfilesPath" -ForegroundColor Green
+        
+        # Prompt user to press any key to close firefox
+        Write-Host "Press any key to relaunch Firefox to apply the tweaks. Make sure all work is saved!"
+        Read-Host
 
-    # Replace forward slashes with backslashes to construct a valid path
-    $nameOfDefaultProfileFolder = $nameOfDefaultProfileFolder -replace '/', '\'
+        taskkill.exe /F /IM firefox.exe | Out-Null
+        Start-Sleep -Seconds 3 # wait for all processes to end
 
-    # Define the Profiles directory path and the full path for the default profile
-    $profilesPathNoProfiles = "$env:APPDATA\Mozilla\Firefox"
-    $defaultProfilePath = Join-Path -Path $profilesPathNoProfiles -ChildPath $nameOfDefaultProfileFolder
+        # restart firefox.exe
+        Start-Process $firefoxExecutable | Out-Null
 
-    # Check if the default profile folder exists
+        Write-Host "Firefox has relaunched and the Betterfox tweaks are applied successfully."
+    } else {
+        Write-Host -ForegroundColor Red "Error: Firefox is most likely in an install location that is unsupported."
+    }
+}
+
+function Install-BetterfoxDefaultProfile {
+    $profilesIniHash = (ConvertFrom-IniFile -FilePath $iniPath)
+    $match = $profilesIniHash.Keys | Where-Object { $_ -like 'Install*' } | Select-Object -First 1
+    if ($match) {
+        $nested = $profilesIniHash[$match]
+        if ($nested.ContainsKey('Default')) {
+            $defaultValue = $nested['Default']
+        }
+    }
+
+    $defaultProfile = $defaultValue -replace '/', '\'
+    $defaultProfilePath = "$ffAppDataPath\$defaultProfile"
     if (Test-Path $defaultProfilePath) {
-        # Define the full path for the user.js file
-        $filePath = Join-Path -Path $defaultProfilePath -ChildPath "user.js"
-
-        # Download the user.js file and save it in the default profile
         try {
-            Invoke-WebRequest -Uri $fileUrl -OutFile $filePath
+            Invoke-WebRequest -Uri $betterfoxDownloadLink -OutFile "$defaultProfilePath\user.js"
             Write-Host "Successfully downloaded and installed Betterfox user.js to the default Firefox profile." -ForegroundColor Green
         } catch {
             Write-Host "Failed to download the user.js file. Error: $_" -ForegroundColor Red
             exit
         }
 
-        # Prompt to relaunch Firefox
-        Write-Host "Press any key to relaunch Firefox to apply the tweaks. Make sure all work is saved!"
-        Read-Host
+        # ask user to press any key to close firefox
+        Read-Host -Prompt "Press any key to relaunch Firefox to apply the tweaks. Make sure all work is saved!"
 
-        # Close Firefox if it’s running
-        TASKKILL /F /IM firefox.exe | Out-Null
-        Start-Sleep -Seconds 1
+        taskkill.exe /F /IM firefox.exe | Out-Null
+        Start-Sleep -Seconds 3 # wait for all processes to end
 
-        # Relaunch Firefox
-        Start-Process "$env:ProgramFiles\Mozilla Firefox\firefox.exe" | Out-Null
+        # restart firefox.exe
+        Start-Process $firefoxExecutable | Out-Null
 
-        Write-Host "Firefox has relaunched and the Betterfox tweaks are applied successfully. Press any key to exit."
-        Read-Host
-        exit
+        Write-Host "Firefox has relaunched and the Betterfox tweaks are applied successfully."
     } else {
-        Clear-Host
-        Write-Host "The default profile folder does not exist: $defaultProfilePath" -ForegroundColor Red
-        Write-Host "Press any key to exit."
-        Read-Host
-        exit
+        Write-Host -ForegroundColor Red "Error: The default profile folder does not exist at $defaultProfilePath. Firefox may be in an unsupported install location."
     }
 }
 
-function choiceBox {
-        $anybox = New-Object AnyBox.AnyBox
-		
-        $anybox.Message = 'What profile would you like to install Betterfox in?'
+function Show-ChoiceBox {
+    $anybox = New-Object AnyBox.AnyBox
+    
+    $anybox.Message = 'What Firefox profile(s) would you like to install Betterfox in?'
 
-        $anybox.Buttons = @(
-            New-AnyBoxButton -Name 'all' -Text 'All Profiles'
-            New-AnyBoxButton -Name 'default' -Text 'Default Profile'
-        )
+    $anybox.Buttons = @(
+        New-AnyBoxButton -Name 'all' -Text 'All Profiles'
+        New-AnyBoxButton -Name 'default' -Text 'Default Profile'
+    )
 
-        # Show the AnyBox; collect responses.
-        $response = $anybox | Show-AnyBox
+    # Show the AnyBox; collect responses.
+    $response = $anybox | Show-AnyBox
 
-        # Act on responses.
-        if ($response['all'] -eq $true) {
-			installInAllProfiles
-        } elseif ($response['default'] -eq $true) {
-			installInDefaultProfile
+    # Act on responses.
+    if ($response['all'] -eq $true) {
+        Install-BetterfoxAllProfiles
+    } elseif ($response['default'] -eq $true) {
+        Install-BetterfoxDefaultProfile
+    }
+}
+
+function Start-Countdown {
+    param (
+        [ValidateRange(1, 59)]
+        [int]$Seconds,
+        [string]$Message
+    )
+
+    for ($i = $Seconds; $i -ge 0; $i--) {
+        $output = "`r" + ($Message -replace '{seconds}', $i.ToString()) + "  "
+        Write-Host $output -NoNewline
+
+        if ($i -gt 0) {
+            Start-Sleep -Seconds 1
         }
     }
 
-Write-Host "Betterfox User.js Installer"
-Write-Host "This is an automated installer for yokoffing's Betterfox user.js mod for Firefox. It improves performance by 30% and makes Firefox better to use."
-Write-Host "Press any key to begin!" -ForegroundColor "Yellow"
-Read-Host
-choiceBox
+    Write-Host "`n"
+}
+
+function New-UnderlinedText {
+    param([string]$text, [string]$underlinedWord)
+    return $text -replace "\{u\}", "$([char]27)[4m$underlinedWord$([char]27)[24m"
+}
+
+function Write-BoldText {
+    param([string]$Text, [switch]$NoNewline)
+    Write-Host -NoNewline:$NoNewline -ForegroundColor White "$Text" 
+}
+
+function Test-FirefoxInstalled {
+    if (Test-Path $firefoxExecutable) {
+        return $true
+    } else {
+        return $false
+    }
+}
+
+
+
+
+
+
+
+
+
+
+Test-AdminPrivileges
+
+if (Test-FirefoxInstalled) {
+    # AnyBox
+    Install-PSModule -ModuleName 'AnyBox' -RequiredVersion 0.5.1
+    Install-PSModule -ModuleName 'PSParseIni' -RequiredVersion 1.0.1
+    Import-Module 'AnyBox'
+    Import-Module 'PSParseIni'
+
+    # i dont wanna deal with like passing params and stuff for now, script-scoped vars work
+    $script:ffAppDataPath = "$env:APPDATA\Mozilla\Firefox"
+    $script:firefoxProfilesPath = "$ffAppDataPath\Profiles"
+    $script:betterfoxDownloadLink = "https://raw.githubusercontent.com/yokoffing/Betterfox/refs/heads/main/user.js"
+    $script:iniPath = "$ffAppDataPath\profiles.ini"
+    $script:firefoxExecutableParent = "$env:ProgramFiles\Mozilla Firefox"
+    $script:firefoxExecutable = "$firefoxExecutableParent\firefox.exe"
+
+    Write-Host -ForegroundColor Green "Welcome to Betterfox User.js Installer!"
+    Write-Host "This is an automated installer for the Betterfox user.js mod for Firefox." 
+    Write-Host "It improves Firefox's performance, security, and more!`n"
+
+    Write-Host -NoNewline -ForegroundColor Yellow "NOTE: " 
+    Write-Host -NoNewLine "This project is an "
+    Write-BoldText -NoNewLine -Text (New-UnderlinedText -Text "{u}" -UnderlinedWord "unofficial")
+    Write-Host " installer for https://github.com/yokoffing/Betterfox."
+
+    Write-Host "`n`n"
+
+    Start-Sleep -Milliseconds 500
+
+    Start-Countdown -Seconds 5 -Message "Script starting in {seconds} seconds..."
+
+    Show-ChoiceBox
+} else {
+    Write-Host -ForegroundColor Red "Error: firefox.exe not found at $firefoxExecutable`nThis likely means that Firefox is not installed, or is installed in a location other than $firefoxExecutableParent."
+}
