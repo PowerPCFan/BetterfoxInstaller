@@ -14,6 +14,61 @@ function Install-PSModule { # Approved Verb ("Places a resource in a location, a
     }
 }
 
+function Get-UserChoice { # Approved Verb ("Specifies an action that retrieves a resource")
+    param (
+        [Parameter(Mandatory=$true)]
+        [string]$readHostMessage,
+        [string]$choicePrompt,
+        [string[]]$keys,
+        
+        [Parameter(Mandatory=$false)]
+        [hashtable]$choiceActions
+    )
+    
+    # Validate that there's an action for each key
+    foreach ($key in $keys) {
+        $actionKey = "choiceIs$key"
+    }
+    
+    # Check if "Default" is defined as a key
+    $hasDefaultAction = $keys -contains "Default"
+    
+    Write-Host "$choicePrompt"    
+    $key = Read-Host "$readHostMessage"
+    $validInput = $false
+    
+    while (-not $validInput) {
+        $upperKey = $key.ToUpper()
+        
+        if ($keys -contains $upperKey) {
+            $validInput = $true
+            $actionKey = "choiceIs$upperKey"
+            
+            if ($choiceActions.ContainsKey($actionKey) -and $null -ne $choiceActions[$actionKey]) {
+                & $choiceActions[$actionKey]
+            }
+        }
+        elseif ($hasDefaultAction) {
+            # If "Default" is defined and user pressed an undefined key, use the default action
+            $validInput = $true
+            $actionKey = "choiceIsDefault"
+            
+            if ($choiceActions.ContainsKey($actionKey) -and $null -ne $choiceActions[$actionKey]) {
+                & $choiceActions[$actionKey]
+            }
+            
+            # Return the actual key pressed when using default action
+            return $upperKey
+        }
+        else {
+            Write-Host -ForegroundColor Red "Invalid input. Please try again"
+            $key = Read-Host "$readHostMessage"
+        }
+    }
+    
+    return $upperKey
+}
+
 function Test-AdminPrivileges { # Approved Verb ("Verifies the operation or consistency of a resource")
     # Check if the script is running as an administrator
     if (-not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
