@@ -38,10 +38,11 @@ function Test-AdminPrivileges { # Approved Verb ("Verifies the operation or cons
 
 function Install-BetterfoxAllProfiles {
     if (Test-Path $firefoxProfilesPath) {
+        Invoke-BetterfoxDownload
         $directories = Get-ChildItem -Path $firefoxProfilesPath -Directory
         foreach ($directory in $directories) {
             $dirName = $directory.FullName
-            Invoke-WebRequest -Uri $betterfoxDownloadLink -OutFile "$dirName\user.js"
+            Copy-Item -Path $betterfoxPath -Destination "$dirName\user.js"
         }
         Write-Host "Successfully downloaded and installed Betterfox user.js to all Firefox profiles in $firefoxProfilesPath" -ForegroundColor Green
         
@@ -75,10 +76,11 @@ function Install-BetterfoxDefaultProfile {
     $defaultProfilePath = "$ffAppDataPath\$defaultProfile"
     if (Test-Path $defaultProfilePath) {
         try {
-            Invoke-WebRequest -Uri $betterfoxDownloadLink -OutFile "$defaultProfilePath\user.js"
-            Write-Host "Successfully downloaded and installed Betterfox user.js to the default Firefox profile." -ForegroundColor Green
+            Invoke-BetterfoxDownload
+            Copy-Item -Path $betterfoxPath -Destination "$defaultProfilePath\user.js"
+            Write-Host "Successfully copied Betterfox user.js to the default Firefox profile." -ForegroundColor Green
         } catch {
-            Write-Host "Failed to download the user.js file. Error: $_" -ForegroundColor Red
+            Write-Host "Failed to copy the user.js file. Error: $_" -ForegroundColor Red
             exit
         }
 
@@ -93,7 +95,7 @@ function Install-BetterfoxDefaultProfile {
 
         Write-Host "Firefox has relaunched and the Betterfox tweaks are applied successfully."
     } else {
-        Write-Host -ForegroundColor Red "Error: The default profile folder does not exist at $defaultProfilePath. Firefox may be in an unsupported install location."
+        Write-Host -ForegroundColor Red "Error: The default profile folder does not exist at $defaultProfilePath. `nFirefox may be in an unsupported install location."
     }
 }
 
@@ -155,6 +157,19 @@ function Test-FirefoxInstalled {
     }
 }
 
+function Invoke-BetterfoxDownload {
+    if (Test-Path $betterfoxDownloadFolder) {
+        Remove-Item -Recurse -Force -Path $betterfoxDownloadFolder | Out-Null
+    }
+    New-Item -ItemType "Directory" -Path $betterfoxDownloadFolder | Out-Null
+    try {
+        Write-Host "Downloading Betterfox user.js..."
+        Invoke-WebRequest -Uri $betterfoxDownloadLink -OutFile "$betterfoxDownloadFolder\user.js"
+        Write-Host -ForegroundColor Green "Successfully downloaded!"
+    } catch {
+        Write-Host -ForegroundColor Red "Error downloading betterfox user.js: $_"
+    }
+}
 
 
 
@@ -163,6 +178,7 @@ function Test-FirefoxInstalled {
 
 
 
+$ProgressPreference = 'SilentlyContinue'
 
 Test-AdminPrivileges
 
@@ -180,6 +196,8 @@ if (Test-FirefoxInstalled) {
     $script:iniPath = "$ffAppDataPath\profiles.ini"
     $script:firefoxExecutableParent = "$env:ProgramFiles\Mozilla Firefox"
     $script:firefoxExecutable = "$firefoxExecutableParent\firefox.exe"
+    $script:betterfoxDownloadFolder = "$env:temp\betterfox-userjs"
+    $script:betterfoxPath = "$betterfoxDownloadFolder\user.js"
 
     Write-Host -ForegroundColor Green "Welcome to Betterfox User.js Installer!"
     Write-Host "This is an automated installer for the Betterfox user.js mod for Firefox." 
