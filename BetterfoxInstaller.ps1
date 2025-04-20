@@ -69,6 +69,11 @@ function Get-UserChoice { # Approved Verb ("Specifies an action that retrieves a
     return $upperKey
 }
 
+function Clear-ScrollDown {
+    $emptyLines = [string]::new("`n", [console]::WindowHeight)
+    Write-Host $emptyLines
+}
+
 function Test-AdminPrivileges { # Approved Verb ("Verifies the operation or consistency of a resource")
     # Check if the script is running as an administrator
     if (-not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
@@ -175,20 +180,93 @@ function Show-ChoiceBox {
     }
 }
 
+# Original Countdown Function
+# function Start-Countdown {
+#     # Example usage: "Start-Countdown -Seconds 5 -Message "Script starting in {seconds} seconds..."
+#     param (
+#         [ValidateRange(1, 59)]
+#         [int]$Seconds,
+#         [string]$Message
+#     )
+
+#     for ($i = $Seconds; $i -ge 0; $i--) {
+#         $output = "`r" + ($Message -replace '{seconds}', $i.ToString()) + "  "
+#         Write-Host $output -NoNewline
+
+#         if ($i -gt 0) {
+#             Start-Sleep -Seconds 1
+#         }
+#     }
+
+#     Write-Host "`n"
+# }
+
+# This is another version of the countdown function but I won't use this for now, it has some downsides
+# function Start-Countdown {
+#     param (
+#         [ValidateRange(1, 59)]
+#         [int]$Seconds,
+#         [string]$Message,
+#         [switch]$SkipOnKeyPress,
+#         [string]$SkippedMessage
+#     )
+
+#     $countDown = $Seconds
+
+#     do {
+#         if ($SkipOnKeyPress -and [Console]::KeyAvailable){
+#             $null = [Console]::ReadKey($true)
+#             Write-Host "$skippedMessage" -ForegroundColor Yellow
+#             break
+#         }
+
+#         $messageWithCounter = $Message -replace "{seconds}", "$countDown"
+#         Write-Host "$messageWithCounter"
+#         Start-Sleep -Seconds 1
+#         $countDown--
+
+#     } while ($countDown -gt 0)
+# }
+
 function Start-Countdown {
     param (
         [ValidateRange(1, 59)]
         [int]$Seconds,
-        [string]$Message
+        [string]$Message,
+        [switch]$SkipOnKeyPress,
+        [string]$SkippedMessage
     )
 
-    for ($i = $Seconds; $i -ge 0; $i--) {
-        $output = "`r" + ($Message -replace '{seconds}', $i.ToString()) + "  "
-        Write-Host $output -NoNewline
+    try {
+        $rs = [runspacefactory]::CreateRunspace($Host)
+        $rs.Open()
+        $ps = [powershell]::Create().AddScript({
+            param($Seconds, $Message)
 
-        if ($i -gt 0) {
-            Start-Sleep -Seconds 1
+            for ($i = $Seconds; $i -ge 0; $i--) {
+
+                $output = "`r" + ($Message -replace '{seconds}', $i.ToString()) + '  '
+                Write-Host $output -NoNewline
+
+                if ($i -gt 0) {
+                    Start-Sleep -Seconds 1
+                }
+            }
+        }).AddParameters(@{ Seconds = $Seconds; Message = $Message })
+        $ps.Runspace = $rs
+        $task = $ps.BeginInvoke()
+
+        while(-not $task.AsyncWaitHandle.WaitOne(200)) {
+            if (($SkipOnKeyPress) -and ([System.Console]::KeyAvailable) -and ([System.Console]::ReadKey($true))) {
+                Write-Host -ForegroundColor Yellow "`n$skippedMessage"
+                $ps.Stop()
+                break
+            }
         }
+    }
+    finally {
+        $ps.Dispose()
+        $rs.Dispose()
     }
 
     Write-Host "`n"
@@ -229,30 +307,32 @@ function Invoke-BetterfoxDownload {
 
 
 
+# ------------------
+# SCRIPT STARTS HERE
+# ------------------
 
-
-
-
+# i dont wanna deal with like passing params and stuff for now, script-scoped vars work
+$script:ffAppDataPath = "$env:APPDATA\Mozilla\Firefox"
+$script:firefoxProfilesPath = "$ffAppDataPath\Profiles"
+$script:betterfoxDownloadLink = "https://raw.githubusercontent.com/yokoffing/Betterfox/refs/heads/main/user.js"
+$script:iniPath = "$ffAppDataPath\profiles.ini"
+$script:firefoxExecutableParent = "$env:ProgramFiles\Mozilla Firefox"
+$script:firefoxExecutable = "$firefoxExecutableParent\firefox.exe"
+$script:betterfoxDownloadFolder = "$env:temp\betterfox-userjs"
+$script:betterfoxPath = "$betterfoxDownloadFolder\user.js"
 $ProgressPreference = 'SilentlyContinue'
 
 Test-AdminPrivileges
 
 if (Test-FirefoxInstalled) {
-    # AnyBox
+    # Install and import modules
     Install-PSModule -ModuleName 'AnyBox' -RequiredVersion 0.5.1
     Install-PSModule -ModuleName 'PSParseIni' -RequiredVersion 1.0.1
     Import-Module 'AnyBox'
     Import-Module 'PSParseIni'
 
-    # i dont wanna deal with like passing params and stuff for now, script-scoped vars work
-    $script:ffAppDataPath = "$env:APPDATA\Mozilla\Firefox"
-    $script:firefoxProfilesPath = "$ffAppDataPath\Profiles"
-    $script:betterfoxDownloadLink = "https://raw.githubusercontent.com/yokoffing/Betterfox/refs/heads/main/user.js"
-    $script:iniPath = "$ffAppDataPath\profiles.ini"
-    $script:firefoxExecutableParent = "$env:ProgramFiles\Mozilla Firefox"
-    $script:firefoxExecutable = "$firefoxExecutableParent\firefox.exe"
-    $script:betterfoxDownloadFolder = "$env:temp\betterfox-userjs"
-    $script:betterfoxPath = "$betterfoxDownloadFolder\user.js"
+    # Clear-ScrollDown
+    Clear-Host
 
     Write-Host -ForegroundColor Green "Welcome to Betterfox User.js Installer!"
     Write-Host "This is an automated installer for the Betterfox user.js mod for Firefox." 
@@ -263,13 +343,17 @@ if (Test-FirefoxInstalled) {
     Write-BoldText -NoNewLine -Text (New-UnderlinedText -Text "{u}" -UnderlinedWord "unofficial")
     Write-Host " installer for https://github.com/yokoffing/Betterfox."
 
-    Write-Host "`n`n"
+    Write-Host "`n`n`n"
 
     Start-Sleep -Milliseconds 500
 
-    Start-Countdown -Seconds 5 -Message "Script starting in {seconds} seconds..."
+    Start-Countdown -SkipOnKeyPress -Seconds 5 `
+    -Message "Script starting in {seconds} seconds... (Press any key to skip)" `
+    -SkippedMessage "Countdown Skipped. Starting script..."
 
     Show-ChoiceBox
+
+    Write-Host "Thanks for using BetterfoxInstaller!"
 } else {
     Write-Host -ForegroundColor Red "Error: firefox.exe not found at $firefoxExecutable`nThis likely means that Firefox is not installed, or is installed in a location other than $firefoxExecutableParent."
 }
