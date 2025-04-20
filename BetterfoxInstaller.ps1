@@ -364,7 +364,7 @@ if (Test-FirefoxInstalled) {
         }
     }
     Install-PSModule -ModuleName 'AnyBox' -RequiredVersion 0.5.1
-    Install-PSModule -ModuleName 'PSParseIni' -RequiredVersion 1.0.1
+    Install-PSModule -ModuleName 'PSParseIni' -RequiredVersion 1.0.2
     Import-Module 'AnyBox'
     Import-Module 'PSParseIni'
 
