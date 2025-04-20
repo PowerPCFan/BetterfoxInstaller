@@ -326,7 +326,20 @@ Test-AdminPrivileges
 
 if (Test-FirefoxInstalled) {
     # Install and import modules
-    Write-Host "Installing modules..."
+    Write-Host "Installing modules and prerequisites..."
+    try {
+        $null = Get-PackageProvider -Name NuGet -ErrorAction Stop -ListAvailable | Where-Object { [version]$_.Version -ge [version]'2.8.5.201' }
+
+        Write-Host "NuGet 2.8.5.201 or higher is already installed." -ForegroundColor Green
+    } catch {
+        Write-Host "NuGet 2.8.5.201 or higher is not installed. Installing now..." -ForegroundColor Yellow
+        try {
+            Install-PackageProvider -Name 'NuGet' -MinimumVersion '2.8.5.201' -Force -Confirm:$false
+            Write-Host "NuGet installed successfully." -ForegroundColor Green
+        } catch {
+            Write-Host "Error installing NuGet: $_" -ForegroundColor Red
+        }
+    }
     Install-PSModule -ModuleName 'AnyBox' -RequiredVersion 0.5.1
     Install-PSModule -ModuleName 'PSParseIni' -RequiredVersion 1.0.1
     Import-Module 'AnyBox'
