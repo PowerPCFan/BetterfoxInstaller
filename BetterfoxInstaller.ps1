@@ -123,40 +123,62 @@ function Install-BetterfoxAllProfiles {
 }
 
 function Install-BetterfoxDefaultProfile {
-    $profilesIniHash = (ConvertFrom-IniFile -FilePath $iniPath)
-    $match = $profilesIniHash.Keys | Where-Object { $_ -like 'Install*' } | Select-Object -First 1
-    if ($match) {
-        $nested = $profilesIniHash[$match]
-        if ($nested.ContainsKey('Default')) {
-            $defaultValue = $nested['Default']
+    try {
+        $profilesIniHash = (ConvertFrom-IniFile -FilePath $iniPath)
+        $match = $profilesIniHash.Keys | Where-Object { $_ -like 'Install*' } | Select-Object -First 1
+        if ($match) {
+            $nested = $profilesIniHash[$match]
+            if ($nested.ContainsKey('Default')) {
+                $defaultValue = $nested['Default']
+                $defaultProfile = $defaultValue -replace '/', '\'
+                $defaultProfilePath = "$ffAppDataPath\$defaultProfile"
+            }
         }
+        $parseFailed = $false
+    } catch {
+        Write-Host -ForegroundColor Red "Error parsing profiles.ini file. Falling back to legacy detection method..."
+        $parseFailed = $true
     }
 
-    $defaultProfile = $defaultValue -replace '/', '\'
-    $defaultProfilePath = "$ffAppDataPath\$defaultProfile"
-    if (Test-Path $defaultProfilePath) {
-        try {
+    if ($parseFailed) {
+        if (Test-Path $firefoxProfilesPath) {
             Invoke-BetterfoxDownload
-            Copy-Item -Path $betterfoxPath -Destination "$defaultProfilePath\user.js"
-            Write-Host "Successfully copied Betterfox user.js to the default Firefox profile." -ForegroundColor Green
-        } catch {
-            Write-Host "Failed to copy the user.js file. Error: $_" -ForegroundColor Red
-            exit
+            $directories = Get-ChildItem -Path $firefoxProfilesPath -Directory
+            foreach ($directory in $directories) {
+                $dirName = $directory.FullName
+                if ($dirName -like "*default-release*") {
+                    Copy-Item -Path $betterfoxPath -Destination "$dirName\user.js"
+                }
+            }
+            Write-Host "Successfully downloaded and installed Betterfox user.js to the default profile using the legacy method." -ForegroundColor Green
         }
-
-        # ask user to press any key to close firefox
-        Read-Host -Prompt "Press any key to relaunch Firefox to apply the tweaks. Make sure all work is saved!"
-
-        taskkill.exe /F /IM firefox.exe | Out-Null
-        Start-Sleep -Seconds 3 # wait for all processes to end
-
-        # restart firefox.exe
-        Start-Process $firefoxExecutable | Out-Null
-
-        Write-Host "Firefox has relaunched and the Betterfox tweaks are applied successfully."
-    } else {
-        Write-Host -ForegroundColor Red "Error: The default profile folder does not exist at $defaultProfilePath. `nFirefox may be in an unsupported install location."
     }
+
+    if (-not $parseFailed) {
+        if (Test-Path $defaultProfilePath) {
+            try {
+                Invoke-BetterfoxDownload
+                Copy-Item -Path $betterfoxPath -Destination "$defaultProfilePath\user.js"
+                Write-Host "Successfully copied Betterfox user.js to the default Firefox profile." -ForegroundColor Green
+            } catch {
+                Write-Host "Failed to copy the user.js file. Error: $_" -ForegroundColor Red
+                exit
+            }
+        } else {
+            Write-Host -ForegroundColor Red "Error: The default profile folder does not exist at $defaultProfilePath. `nFirefox may be in an unsupported install location."
+        }
+    }
+
+    # ask user to press any key to close firefox
+    Read-Host -Prompt "Press any key to relaunch Firefox to apply the tweaks. Make sure all work is saved!"
+
+    taskkill.exe /F /IM firefox.exe | Out-Null
+    Start-Sleep -Seconds 3 # wait for all processes to end
+
+    # restart firefox.exe
+    Start-Process $firefoxExecutable | Out-Null
+
+    Write-Host "Firefox has relaunched and the Betterfox tweaks are applied successfully."
 }
 
 function Show-ChoiceBox {
@@ -323,6 +345,7 @@ $script:betterfoxPath = "$betterfoxDownloadFolder\user.js"
 $ProgressPreference = 'SilentlyContinue'
 
 Test-AdminPrivileges
+Set-ExecutionPolicy -ExecutionPolicy Unrestricted -Scope Process -Force
 
 if (Test-FirefoxInstalled) {
     # Install and import modules
@@ -332,7 +355,7 @@ if (Test-FirefoxInstalled) {
 
         Write-Host "NuGet 2.8.5.201 or higher is already installed." -ForegroundColor Green
     } catch {
-        Write-Host "NuGet 2.8.5.201 or higher is not installed. Installing now..." -ForegroundColor Yellow
+        Write-Host "NuGet 2.8.5.201 or higher is not installed! Installing now..." -ForegroundColor Yellow
         try {
             Install-PackageProvider -Name 'NuGet' -MinimumVersion '2.8.5.201' -Force -Confirm:$false
             Write-Host "NuGet installed successfully." -ForegroundColor Green
